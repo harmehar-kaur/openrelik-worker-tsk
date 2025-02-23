@@ -9,6 +9,9 @@ RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selectio
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-poetry \
     # Add your dependencies here
+    sleuthkit \
+    libtsk-dev \
+    libtsk19 \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure poetry
