@@ -20,22 +20,29 @@ from openrelik_worker_common.task_utils import create_task_result, get_input_fil
 from .app import celery
 
 # Task name used to register and route the task to the correct queue.
-TASK_NAME = "openrelik-worker-TEMPLATEWORKERNAME.tasks.your_task_name"
+TASK_NAME = "openrelik-worker-tsk.tasks.filesystem"
 
 # Task metadata for registration in the core system.
 TASK_METADATA = {
-    "display_name": "openrelik-worker-TEMPLATEWORKERNAME",
-    "description": "TEMPLATEDESC",
+    "display_name": "openrelik-worker-TSK",
+    "description": "Using TSK to parse and analyse Filesystem Files [MFT, J, BOOT, etc.]",
     # Configuration that will be rendered as a web for in the UI, and any data entered
     # by the user will be available to the task function when executing (task_config).
-    "task_config": [
-        {
-            "name": "<REPLACE_WITH_NAME>",
-            "label": "<REPLACE_WITH_LABEL>",
-            "description": "<REPLACE_WITH_DESCRIPTION>",
-            "type": "<REPLACE_WITH_TYPE>",  # Types supported: text, textarea, checkbox
-            "required": False,
-        },
+    "task_config": [ 
+        { 
+            "name": "artifact_types",
+            "label": "Artifact Types",
+            "description": "Select the file system artifacts to process.",
+            "type": "checkbox",
+            "options": [
+                {"label": "MFT", "value": "mft"},
+                {"label": "Journal", "value": "journal"},
+                {"label": "Boot Log", "value": "boot_log"},
+                {"label": "Logfile", "value": "logfile"},
+                {"label": "Io3", "value": "io3"},
+            ],
+            "required": True,
+        }
     ],
 }
 
@@ -63,30 +70,40 @@ def command(
     """
     input_files = get_input_files(pipe_result, input_files or [])
     output_files = []
-    base_command = ["<REPLACE_WITH_COMMAND>"]
-    base_command_string = " ".join(base_command)
-
+    artifact_types = task_config.get("artifact_types", [])
+    
+    commands = {
+        "mft": ["fls", "-r"],
+        "journal": ["icat"],
+        "boot_log": ["icat"],
+        "logfile": ["icat"],
+        "io3": ["icat"],
+    }
+    
     for input_file in input_files:
-        output_file = create_output_file(
-            output_path,
-            display_name=input_file.get("display_name"),
-            extension="<REPLACE_WITH_FILE_EXTENSION>",
-            data_type="<[OPTIONAL]_REPLACE_WITH_DATA_TYPE>",
-        )
-        command = base_command + [input_file.get("path")]
-
-        # Run the command
-        with open(output_file.path, "w") as fh:
-            subprocess.Popen(command, stdout=fh)
-
-        output_files.append(output_file.to_dict())
-
+        file_name = input_file.get("display_name", "").lower()
+        matched_type = next((t for t in artifact_types if t in file_name), None)
+        
+        if matched_type and matched_type in commands:
+            output_file = create_output_file(
+                output_path,
+                display_name=input_file.get("display_name"),
+                extension=".txt",
+                data_type="filesystem_artifact",
+            )
+            
+            command = commands[matched_type] + [input_file.get("path")]
+            
+            with open(output_file.path, "w") as fh:
+                subprocess.Popen(command, stdout=fh)
+            
+            output_files.append(output_file.to_dict())
+    
     if not output_files:
-        raise RuntimeError("<REPLACE_WITH_ERROR_STRING>")
-
+        raise RuntimeError("No valid file system artifacts processed.")
     return create_task_result(
         output_files=output_files,
         workflow_id=workflow_id,
-        command=base_command_string,
+        command="; ".join([" ".join(commands[t] + [f.get('path')]) for t, f in zip(artifact_types, output_files)]),
         meta={},
     )
